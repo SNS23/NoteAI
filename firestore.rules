@@ -1,0 +1,86 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // UserProfile: { uid: string, email: string, role: string }
+    // Project: { id: string, name: string, createdAt: number }
+    // TeamMember: { id: string, name: string, email: string, projectIds: string[] }
+    // ActionItem: { id: string, projectId: string, status: string, ... }
+    // MeetingNote: { id: string, projectId: string, content: string, userId: string }
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         request.auth.token.email.lower() == 'sandeepit@gmail.com');
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.role in ['admin', 'regular'] &&
+             data.email is string &&
+             data.uid is string;
+    }
+
+    function isValidProject(data) {
+      return data.keys().hasAll(['name', 'createdAt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100;
+    }
+
+    function isValidMember(data) {
+      return data.keys().hasAll(['name', 'role', 'projectId']) &&
+             data.name is string &&
+             data.role is string;
+    }
+
+    function isValidActionItem(data) {
+      return data.keys().hasAll(['id', 'projectId', 'workStream', 'owner', 'responsible', 'status', 'priority']) &&
+             data.status in ['pending', 'in-progress', 'completed', 'blocked'] &&
+             data.priority in ['low', 'medium', 'high'];
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidUser(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /projects/{projectId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin() && isValidProject(request.resource.data);
+
+      match /members/{memberId} {
+        allow read: if isAuthenticated();
+        allow create, update, delete: if isAdmin() && isValidMember(request.resource.data);
+      }
+    }
+
+    match /actionItems/{itemId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && isValidActionItem(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /meetingNotes/{noteId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+  }
+}

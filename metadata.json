@@ -1,0 +1,5 @@
+{
+  "name": "ActionTracker AI",
+  "description": "Professional meeting notes analyzer and action item tracker with role-based access and performance analytics.",
+  "requestFramePermissions": []
+}

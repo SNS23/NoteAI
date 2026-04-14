@@ -1,0 +1,97 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user role and basic info",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["admin", "regular"] },
+        "displayName": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "A project that contains action items and team members",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "domain": { "type": "string" },
+        "description": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "name", "createdAt"]
+    },
+    "ProjectMember": {
+      "title": "Project Member",
+      "description": "A person allocated to a specific project with a role",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "projectId": { "type": "string" }
+      },
+      "required": ["id", "name", "role", "projectId"]
+    },
+    "ActionItem": {
+      "title": "Action Item",
+      "description": "A specific task to be tracked",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "projectId": { "type": "string" },
+        "workStream": { "type": "string" },
+        "owner": { "type": "string" },
+        "responsible": { "type": "string" },
+        "informed": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "dueDate": { "type": "string" },
+        "requirements": { "type": "string" },
+        "ticketRef": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "in-progress", "completed", "blocked"] },
+        "nextSteps": { "type": "string" },
+        "priority": { "type": "string", "enum": ["low", "medium", "high"] }
+      },
+      "required": ["id", "projectId", "workStream", "owner", "responsible", "status", "priority"]
+    },
+    "MeetingNote": {
+      "title": "Meeting Note",
+      "description": "Raw notes from a meeting",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "projectId": { "type": "string" },
+        "content": { "type": "string" },
+        "analyzedAt": { "type": "number" },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "projectId", "content", "analyzedAt", "userId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile data"
+    },
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Project metadata"
+    },
+    "/projects/{projectId}/members/{memberId}": {
+      "schema": "ProjectMember",
+      "description": "Team members allocated to this project"
+    },
+    "/actionItems/{itemId}": {
+      "schema": "ActionItem",
+      "description": "Action item tracker entries"
+    },
+    "/meetingNotes/{noteId}": {
+      "schema": "MeetingNote",
+      "description": "Stored meeting notes"
+    }
+  }
+}
