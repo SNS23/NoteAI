@@ -70,6 +70,8 @@ export default function App() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const projs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
       setProjects(projs);
+    }, (error) => {
+      console.error("Projects Subscription Error:", error);
     });
     return () => unsubscribe();
   }, [user]);

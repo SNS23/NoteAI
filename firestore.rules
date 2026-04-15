@@ -46,9 +46,12 @@ service cloud.firestore {
     }
 
     function isValidActionItem(data) {
-      return data.keys().hasAll(['id', 'projectId', 'workStream', 'owner', 'responsible', 'status', 'priority']) &&
+      return data.keys().hasAll(['projectId', 'workStream', 'owner', 'responsible', 'status', 'priority']) &&
              data.status in ['pending', 'in-progress', 'completed', 'blocked'] &&
-             data.priority in ['low', 'medium', 'high'];
+             data.priority in ['low', 'medium', 'high'] &&
+             data.workStream is string &&
+             data.owner is string &&
+             data.responsible is string;
     }
 
     // ===============================================================

@@ -22,6 +22,8 @@ export default function PerformanceDashboard({ projects }: PerformanceDashboardP
     const q = collection(db, 'actionItems');
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setItems(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActionItem)));
+    }, (error) => {
+      console.error("Dashboard Items Subscription Error:", error);
     });
     return () => unsubscribe();
   }, []);

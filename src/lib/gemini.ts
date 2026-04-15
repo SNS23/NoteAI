@@ -45,8 +45,11 @@ export async function analyzeMeetingNotes(
     Return the result as a JSON object with two arrays: "additions" and "updates".
   `;
 
+  console.log('Starting Gemini Analysis for project:', projectId);
+  console.log('Existing items count:', existingItems.length);
+
   const response = await ai.models.generateContent({
-    model: "gemini-3.1-pro-preview",
+    model: "gemini-2.0-flash",
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -102,11 +105,23 @@ export async function analyzeMeetingNotes(
     },
   });
 
+  console.log('Gemini Response received');
+
   try {
     const result = JSON.parse(response.text);
+    console.log('Parsed result additions:', result.additions.length);
+    console.log('Parsed result updates:', result.updates.length);
     
     const additions = result.additions.map((item: any) => ({
-      ...item,
+      workStream: item.workStream || 'Uncategorized',
+      owner: item.owner || 'TBD',
+      responsible: item.responsible || 'TBD',
+      informed: item.informed || '',
+      dueDate: item.dueDate || 'TBD',
+      requirements: item.requirements || '',
+      ticketRef: item.ticketRef || '',
+      nextSteps: item.nextSteps || '',
+      priority: item.priority || 'medium',
       projectId,
       status: 'pending',
       createdAt: Date.now(),
@@ -117,7 +132,7 @@ export async function analyzeMeetingNotes(
       updates: result.updates
     };
   } catch (e) {
-    console.error("Failed to parse Gemini response", e);
-    return { additions: [], updates: [] };
+    console.error("Failed to parse Gemini response. Raw text:", response.text);
+    throw new Error("Failed to parse AI response. Please check the console for details.");
   }
 }

@@ -39,6 +39,8 @@ export default function ProjectManagement({ projects }: ProjectManagementProps) 
     const q = query(collection(db, `projects/${selectedProject.id}/members`));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setTeamMembers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TeamMember)));
+    }, (error) => {
+      console.error("Team Members Subscription Error:", error);
     });
     return () => unsubscribe();
   }, [selectedProject]);
@@ -65,7 +67,6 @@ export default function ProjectManagement({ projects }: ProjectManagementProps) 
   };
 
   const handleDeleteProject = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this project? All associated data will be lost.')) return;
     try {
       await deleteDoc(doc(db, 'projects', id));
       toast.success('Project deleted');
@@ -185,7 +186,7 @@ export default function ProjectManagement({ projects }: ProjectManagementProps) 
                       <DialogTrigger render={<Button variant="ghost" size="icon" onClick={() => setSelectedProject(p)} className="text-blue-500 hover:text-blue-700 hover:bg-blue-50" />}>
                         <Users size={16} />
                       </DialogTrigger>
-                      <DialogContent className="max-w-2xl">
+                      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                         <DialogHeader>
                           <DialogTitle>Manage Team: {p.name}</DialogTitle>
                           <DialogDescription>Allocate team members and assign project-specific roles</DialogDescription>

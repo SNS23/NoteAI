@@ -45,6 +45,8 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setHistory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any)));
+    }, (error) => {
+      console.error("History Subscription Error:", error);
     });
     return () => unsubscribe();
   }, [selectedProjectId]);
@@ -57,6 +59,9 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setItems(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActionItem)));
+    }, (error) => {
+      console.error("Action Items Subscription Error:", error);
+      toast.error("Failed to sync action items");
     });
     return () => unsubscribe();
   }, [selectedProjectId]);
@@ -103,7 +108,8 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
       toast.success(`Analysis complete: ${additions.length} new items, ${updates.length} updates`);
       setNotes('');
     } catch (error) {
-      toast.error('Analysis failed. Please try again.');
+      console.error('Analysis Error Detail:', error);
+      toast.error(`Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setAnalyzing(false);
     }
@@ -119,7 +125,6 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
   };
 
   const deleteItem = async (id: string) => {
-    if (!confirm('Delete this action item?')) return;
     try {
       await deleteDoc(doc(db, 'actionItems', id));
       toast.success('Item removed');
@@ -129,9 +134,9 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
   };
 
   const filteredItems = items.filter(item => 
-    item.workStream.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    item.owner.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    item.responsible.toLowerCase().includes(searchQuery.toLowerCase())
+    (item.workStream?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+    (item.owner?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+    (item.responsible?.toLowerCase() || '').includes(searchQuery.toLowerCase())
   );
 
   const getStatusBadge = (status: string) => {
@@ -228,15 +233,15 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
                   <History size={16} />
                   Version History
                 </DialogTrigger>
-                <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
                   <DialogHeader>
                     <DialogTitle>Meeting Notes History</DialogTitle>
                     <DialogDescription>
                       Review the last 10 versions of notes for this project
                     </DialogDescription>
                   </DialogHeader>
-                  <ScrollArea className="flex-1 pr-4">
-                    <div className="space-y-4 py-4">
+                  <ScrollArea className="flex-1 pr-4 -mr-4">
+                    <div className="space-y-4 py-4 pr-4">
                       {history.map((note) => (
                         <Card key={note.id} className="border-slate-100 shadow-none hover:border-primary/30 transition-colors">
                           <CardHeader className="p-4 pb-2">
@@ -395,7 +400,7 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
       </div>
 
       <Dialog open={!!viewingNote} onOpenChange={(open) => !open && setViewingNote(null)}>
-        <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle>Meeting Notes Content</DialogTitle>
             <DialogDescription>
