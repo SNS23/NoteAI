@@ -64,6 +64,32 @@ export default function PerformanceDashboard({ projects }: PerformanceDashboardP
     return Object.values(counts).sort((a, b) => b.total - a.total).slice(0, 5);
   }, [filteredItems]);
 
+  const categoryData = useMemo(() => {
+    const counts: Record<string, { name: string, total: number, completed: number }> = {};
+    filteredItems.forEach(item => {
+      const cat = item.category || 'Uncategorized';
+      if (!counts[cat]) {
+        counts[cat] = { name: cat, total: 0, completed: 0 };
+      }
+      counts[cat].total += 1;
+      if (item.status === 'completed') counts[cat].completed += 1;
+    });
+    return Object.values(counts).sort((a, b) => b.total - a.total);
+  }, [filteredItems]);
+
+  const epicData = useMemo(() => {
+    const counts: Record<string, { name: string, total: number, completed: number }> = {};
+    filteredItems.forEach(item => {
+      const epic = item.epic || 'Uncategorized';
+      if (!counts[epic]) {
+        counts[epic] = { name: epic, total: 0, completed: 0 };
+      }
+      counts[epic].total += 1;
+      if (item.status === 'completed') counts[epic].completed += 1;
+    });
+    return Object.values(counts).sort((a, b) => b.total - a.total).slice(0, 5);
+  }, [filteredItems]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -93,7 +119,7 @@ export default function PerformanceDashboard({ projects }: PerformanceDashboardP
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.total}</div>
-            <p className="text-xs text-slate-500">Across all workstreams</p>
+            <p className="text-xs text-slate-500">Across {epicData.length} Workstreams</p>
           </CardContent>
         </Card>
         <Card className="border-slate-200">
@@ -113,22 +139,22 @@ export default function PerformanceDashboard({ projects }: PerformanceDashboardP
         </Card>
         <Card className="border-slate-200">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Productivity</CardTitle>
-            <TrendingUp className="h-4 w-4 text-blue-500" />
+            <CardTitle className="text-sm font-medium">Top Category</CardTitle>
+            <Zap className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">High</div>
-            <p className="text-xs text-slate-500">Based on recent velocity</p>
+            <div className="text-xl font-bold truncate">{categoryData[0]?.name || 'N/A'}</div>
+            <p className="text-xs text-slate-500">{categoryData[0]?.total || 0} active items</p>
           </CardContent>
         </Card>
         <Card className="border-slate-200">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Utilization</CardTitle>
+            <CardTitle className="text-sm font-medium">Team Scale</CardTitle>
             <Users className="h-4 w-4 text-orange-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">84%</div>
-            <p className="text-xs text-slate-500">Team member allocation</p>
+            <div className="text-2xl font-bold">{ownerData.length}</div>
+            <p className="text-xs text-slate-500">Active contributors</p>
           </CardContent>
         </Card>
       </div>
@@ -171,6 +197,43 @@ export default function PerformanceDashboard({ projects }: PerformanceDashboardP
 
         <Card className="border-slate-200">
           <CardHeader>
+            <CardTitle>Category Distribution</CardTitle>
+            <CardDescription>Tasks grouped by nature of work</CardDescription>
+          </CardHeader>
+          <CardContent className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={categoryData} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                <XAxis type="number" fontSize={10} hide />
+                <YAxis dataKey="name" type="category" fontSize={10} width={120} tickLine={false} axisLine={false} />
+                <Tooltip />
+                <Bar dataKey="total" name="Total Actions" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card className="border-slate-200">
+          <CardHeader>
+            <CardTitle>Epic Progress</CardTitle>
+            <CardDescription>Top functionalities completion status</CardDescription>
+          </CardHeader>
+          <CardContent className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={epicData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="name" fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis fontSize={10} tickLine={false} axisLine={false} />
+                <Tooltip />
+                <Bar dataKey="total" name="Total" fill="#e2e8f0" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="completed" name="Completed" fill="#10b981" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card className="border-slate-200">
+          <CardHeader>
             <CardTitle>Top Owners Performance</CardTitle>
             <CardDescription>Committed vs Delivered by team member</CardDescription>
           </CardHeader>
@@ -178,8 +241,8 @@ export default function PerformanceDashboard({ projects }: PerformanceDashboardP
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={ownerData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis fontSize={12} tickLine={false} axisLine={false} />
+                <XAxis dataKey="name" fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis fontSize={10} tickLine={false} axisLine={false} />
                 <Tooltip />
                 <Bar dataKey="total" name="Committed" fill="#e2e8f0" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="completed" name="Delivered" fill="#3b82f6" radius={[4, 4, 0, 0]} />

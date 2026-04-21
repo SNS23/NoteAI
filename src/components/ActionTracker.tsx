@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
 import { toast } from 'sonner';
-import { FileText, Sparkles, Download, Trash2, CheckCircle2, Clock, AlertCircle, Filter, Search, History, Eye, Users } from 'lucide-react';
+import { FileText, Sparkles, Download, Trash2, CheckCircle2, Clock, AlertCircle, Filter, Search, History, Eye, Users, Zap } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { STATUS_OPTIONS, PRIORITY_OPTIONS } from '../constants';
 import { format } from 'date-fns';
@@ -210,9 +210,9 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
 
     const groups: Record<string, ActionItem[]> = {};
     filtered.forEach(item => {
-      const owner = item.owner || 'Unassigned';
-      if (!groups[owner]) groups[owner] = [];
-      groups[owner].push(item);
+      const epic = item.epic || 'Uncategorized Functionality';
+      if (!groups[epic]) groups[epic] = [];
+      groups[epic].push(item);
     });
     return groups;
   }, [filteredItems, searchQuery]);
@@ -385,33 +385,35 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
             </div>
 
             <ScrollArea className="h-[500px] w-full rounded-md border border-slate-100">
-              <Table className="min-w-full table-fixed">
+              <Table className="min-w-full table-fixed text-xs sm:text-sm">
                 <TableHeader className="bg-slate-50 sticky top-0 z-10">
                   <TableRow>
-                    <TableHead className="w-[30%] min-w-[200px]">Title</TableHead>
-                    <TableHead className="w-[20%] min-w-[120px]">Owner</TableHead>
-                    <TableHead className="w-[15%] min-w-[100px]">Due Date</TableHead>
-                    <TableHead className="w-[20%] min-w-[140px]">Status</TableHead>
-                    <TableHead className="w-[15%] min-w-[100px] text-right">Actions</TableHead>
+                    <TableHead className="w-[25%] min-w-[150px]">Work Stream</TableHead>
+                    <TableHead className="w-[15%] min-w-[100px]">Category</TableHead>
+                    <TableHead className="w-[15%] min-w-[100px]">Owner</TableHead>
+                    <TableHead className="w-[10%] min-w-[80px]">Priority</TableHead>
+                    <TableHead className="w-[10%] min-w-[90px]">Due Date</TableHead>
+                    <TableHead className="w-[15%] min-w-[120px]">Status</TableHead>
+                    <TableHead className="w-[10%] min-w-[80px] text-right">Edit</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {Object.entries(groupedItems).map(([owner, ownerItems]) => (
-                    <React.Fragment key={owner}>
+                  {Object.entries(groupedItems).map(([epic, epicItems]) => (
+                    <React.Fragment key={epic}>
                       <TableRow className="bg-slate-50/50 hover:bg-slate-50/50 border-y border-slate-200">
-                        <TableCell colSpan={5} className="py-2">
+                        <TableCell colSpan={7} className="py-2">
                           <div className="flex items-center gap-2">
-                            <Users size={14} className="text-slate-400" />
-                            <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-                              Grouped By: {owner}
+                            <Zap size={14} className="text-primary" />
+                            <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+                              Functionality: {epic}
                             </span>
-                            <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
-                              {(ownerItems as ActionItem[]).length}
+                            <Badge variant="secondary" className="text-[10px] h-4 px-1.5 bg-primary/10 text-primary border-none">
+                              {(epicItems as ActionItem[]).length}
                             </Badge>
                           </div>
                         </TableCell>
                       </TableRow>
-                      {(ownerItems as ActionItem[]).map((item) => (
+                      {(epicItems as ActionItem[]).map((item) => (
                         <TableRow 
                           key={item.id} 
                           className={`group transition-colors ${editingId === item.id ? 'bg-primary/5' : 'hover:bg-slate-50/80 cursor-pointer'}`}
@@ -422,7 +424,7 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
                               <Input 
                                 value={editFormData.workStream || ''} 
                                 onChange={(e) => setEditFormData({ ...editFormData, workStream: e.target.value })}
-                                className="h-8 text-sm"
+                                className="h-8 text-xs sm:text-sm"
                                 onClick={(e) => e.stopPropagation()}
                               />
                             ) : (
@@ -432,16 +434,24 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
                             )}
                           </TableCell>
                           <TableCell>
+                            <Badge variant="outline" className="text-[10px] font-normal border-slate-200 bg-slate-50 whitespace-nowrap">
+                              {item.category || 'N/A'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
                             {editingId === item.id ? (
                               <Input 
                                 value={editFormData.owner || ''} 
                                 onChange={(e) => setEditFormData({ ...editFormData, owner: e.target.value })}
-                                className="h-8 text-sm"
+                                className="h-8 text-xs sm:text-sm"
                                 onClick={(e) => e.stopPropagation()}
                               />
                             ) : (
-                              <div className="text-sm text-slate-600 truncate">{item.owner}</div>
+                              <div className="text-xs sm:text-sm text-slate-600 truncate">{item.owner}</div>
                             )}
+                          </TableCell>
+                          <TableCell>
+                            {getPriorityBadge(item.priority)}
                           </TableCell>
                           <TableCell>
                             {editingId === item.id ? (
@@ -449,11 +459,11 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
                                 type="text"
                                 value={editFormData.dueDate || ''} 
                                 onChange={(e) => setEditFormData({ ...editFormData, dueDate: e.target.value })}
-                                className="h-8 text-sm"
+                                className="h-8 text-xs sm:text-sm"
                                 onClick={(e) => e.stopPropagation()}
                               />
                             ) : (
-                              <div className="text-sm text-slate-500 whitespace-nowrap">{item.dueDate}</div>
+                              <div className="text-[10px] sm:text-xs text-slate-500 whitespace-nowrap">{item.dueDate}</div>
                             )}
                           </TableCell>
                           <TableCell>
@@ -470,7 +480,7 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
                                     <SelectItem key={opt.value} value={opt.value}>
                                       <div className="flex items-center gap-2">
                                         <div className={`w-2 h-2 rounded-full ${opt.color}`} />
-                                        <span className="text-xs">{opt.label}</span>
+                                        <span className="text-[10px] sm:text-xs">{opt.label}</span>
                                       </div>
                                     </SelectItem>
                                   ))}
@@ -485,7 +495,7 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
                                   <Button 
                                     variant="ghost" 
                                     size="sm" 
-                                    className="h-7 px-2 text-xs text-primary"
+                                    className="h-7 px-2 text-[10px] text-primary"
                                     onClick={() => handleUpdateItem(item.id, editFormData)}
                                   >
                                     Save
@@ -493,31 +503,21 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
                                   <Button 
                                     variant="ghost" 
                                     size="sm" 
-                                    className="h-7 px-2 text-xs text-slate-500"
+                                    className="h-7 px-2 text-[10px] text-slate-500"
                                     onClick={cancelEditing}
                                   >
                                     Cancel
                                   </Button>
                                 </>
                               ) : (
-                                <>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    onClick={() => startEditing(item)}
-                                    className="h-8 w-8 text-slate-400 hover:text-primary"
-                                  >
-                                    <Filter className="rotate-90" size={14} />
-                                  </Button>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    onClick={() => deleteItem(item.id)}
-                                    className="h-8 w-8 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all"
-                                  >
-                                    <Trash2 size={14} />
-                                  </Button>
-                                </>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  onClick={() => startEditing(item)}
+                                  className="h-8 w-8 text-slate-400 hover:text-primary"
+                                >
+                                  <Filter className="rotate-90" size={14} />
+                                </Button>
                               )}
                             </div>
                           </TableCell>
@@ -576,14 +576,24 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-6 pt-4 border-t border-slate-100">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-slate-100">
                 <div className="space-y-1 text-slate-500">
-                  <span className="block text-[10px] uppercase tracking-wider font-medium">Owner</span>
-                  <span className="text-sm font-semibold text-slate-700">{viewingItem?.owner}</span>
+                  <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Functionality / Epic</span>
+                  <span className="text-xs font-semibold text-slate-700">{viewingItem?.epic || 'Uncategorized'}</span>
                 </div>
                 <div className="space-y-1 text-slate-500">
-                  <span className="block text-[10px] uppercase tracking-wider font-medium">Due Date</span>
-                  <span className="text-sm font-semibold text-slate-700">{viewingItem?.dueDate}</span>
+                  <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Category</span>
+                  <Badge variant="secondary" className="text-[9px] h-5 bg-slate-100 text-slate-600 border-none font-medium">
+                    {viewingItem?.category}
+                  </Badge>
+                </div>
+                <div className="space-y-1 text-slate-500">
+                  <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Owner</span>
+                  <span className="text-xs font-semibold text-slate-700">{viewingItem?.owner}</span>
+                </div>
+                <div className="space-y-1 text-slate-500">
+                  <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Due Date</span>
+                  <span className="text-xs font-semibold text-slate-700">{viewingItem?.dueDate}</span>
                 </div>
               </div>
             </div>

@@ -35,10 +35,26 @@ export interface TeamMember {
   projectId: string;
 }
 
+export type ActionCategory = 
+  | 'documentation'
+  | 'AI code change'
+  | 'ML code change'
+  | 'BE code change'
+  | 'FE code change'
+  | 'design change'
+  | 'architecture change'
+  | 'testing'
+  | 'requirement clarification'
+  | 'DevOps infrastructure'
+  | 'ML Ops infrastructure'
+  | 'Uncategorized';
+
 export interface ActionItem {
   id: string;
   projectId: string;
   workStream: string;
+  epic: string;
+  category: ActionCategory;
   owner: string;
   responsible: string;
   informed: string;

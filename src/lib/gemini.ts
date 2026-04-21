@@ -1,7 +1,6 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { ActionItem } from "../types";
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+import { Type } from "@google/genai";
+import { ActionItem, ActionCategory } from "../types";
+import { callAI } from "./ai";
 
 export interface AnalysisResult {
   additions: Partial<ActionItem>[];
@@ -16,10 +15,11 @@ export async function analyzeMeetingNotes(
   const existingContext = existingItems.map(item => ({
     id: item.id,
     workStream: item.workStream,
+    epic: item.epic || 'Uncategorized',
+    category: item.category || 'Uncategorized',
     owner: item.owner,
     status: item.status,
     requirements: item.requirements,
-    ticketRef: item.ticketRef
   }));
 
   const prompt = `
@@ -32,8 +32,21 @@ export async function analyzeMeetingNotes(
     ${notes}
 
     Your task:
-    1. Identify NEW action items mentioned in the notes that are not in the existing list.
-    2. Identify UPDATES to existing action items. Pay close attention to:
+    1. Identify NEW action items mentioned in the notes.
+    2. Group NEW items by "epic" or "functionality" (high-level grouping of related tasks).
+    3. Categorize NEW items into one of these specific categories:
+       - documentation
+       - AI code change
+       - ML code change
+       - BE code change
+       - FE code change
+       - design change
+       - architecture change
+       - testing
+       - requirement clarification
+       - DevOps infrastructure
+       - ML Ops infrastructure
+    4. Identify UPDATES to existing action items. Pay close attention to:
        - STATUS CHANGES: If notes mention a task is "done", "finished", "started", "blocked", or "moving to in-progress", update the "status" field accordingly.
        - Requirement additions or progress updates.
        - Changes in ownership or due dates.
@@ -45,116 +58,92 @@ export async function analyzeMeetingNotes(
     - "new", "pending" -> "pending"
     
     For NEW items (additions), provide:
-    - workStream, owner, responsible, informed, dueDate, requirements, ticketRef, nextSteps, priority (low/medium/high).
+    - workStream (short title), epic (functionality group), category (from list above), owner, responsible, informed, requirements, priority (low/medium/high), nextSteps.
+
+    Important: Do NOT provide dueDate for NEW items; it will be calculated automatically.
 
     For UPDATES, provide:
     - id: The ID of the existing item.
-    - updates: An object containing ONLY the fields that have changed or been updated.
+    - updates: An object containing ONLY the fields that have changed.
 
     Return the result as a JSON object with two arrays: "additions" and "updates".
   `;
 
-  console.log('Starting Gemini Analysis for project:', projectId);
-  console.log('Existing items count:', existingItems.length);
-
-  const maxRetries = 3;
-  let retryCount = 0;
-
-  async function executeWithRetry(): Promise<any> {
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              additions: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    workStream: { type: Type.STRING },
-                    owner: { type: Type.STRING },
-                    responsible: { type: Type.STRING },
-                    informed: { type: Type.STRING },
-                    dueDate: { type: Type.STRING },
-                    requirements: { type: Type.STRING },
-                    ticketRef: { type: Type.STRING },
-                    nextSteps: { type: Type.STRING },
-                    priority: { type: Type.STRING, enum: ["low", "medium", "high"] },
-                  },
-                  required: ["workStream", "owner", "responsible", "requirements", "priority"],
-                },
-              },
-              updates: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    id: { type: Type.STRING },
-                    updates: {
-                      type: Type.OBJECT,
-                      properties: {
-                        workStream: { type: Type.STRING },
-                        owner: { type: Type.STRING },
-                        responsible: { type: Type.STRING },
-                        informed: { type: Type.STRING },
-                        dueDate: { type: Type.STRING },
-                        requirements: { type: Type.STRING },
-                        ticketRef: { type: Type.STRING },
-                        nextSteps: { type: Type.STRING },
-                        status: { type: Type.STRING, enum: ["pending", "in-progress", "completed", "blocked"] },
-                        priority: { type: Type.STRING, enum: ["low", "medium", "high"] },
-                      }
-                    }
-                  },
-                  required: ["id", "updates"]
-                }
-              }
-            },
-            required: ["additions", "updates"]
+  const schema = {
+    type: Type.OBJECT,
+    properties: {
+      additions: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            workStream: { type: Type.STRING },
+            epic: { type: Type.STRING },
+            category: { type: Type.STRING },
+            owner: { type: Type.STRING },
+            responsible: { type: Type.STRING },
+            informed: { type: Type.STRING },
+            requirements: { type: Type.STRING },
+            nextSteps: { type: Type.STRING },
+            priority: { type: Type.STRING, enum: ["low", "medium", "high"] },
           },
+          required: ["workStream", "epic", "category", "owner", "responsible", "requirements", "priority"],
         },
-      });
-      return response;
-    } catch (error: any) {
-      if (error?.code === 429 || error?.status === "RESOURCE_EXHAUSTED") {
-        if (retryCount < maxRetries) {
-          retryCount++;
-          const delay = Math.pow(2, retryCount) * 1000;
-          console.log(`Rate limited. Retrying in ${delay}ms... (Attempt ${retryCount}/${maxRetries})`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          return executeWithRetry();
+      },
+      updates: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            id: { type: Type.STRING },
+            updates: {
+              type: Type.OBJECT,
+              properties: {
+                workStream: { type: Type.STRING },
+                epic: { type: Type.STRING },
+                category: { type: Type.STRING },
+                owner: { type: Type.STRING },
+                responsible: { type: Type.STRING },
+                informed: { type: Type.STRING },
+                requirements: { type: Type.STRING },
+                nextSteps: { type: Type.STRING },
+                status: { type: Type.STRING, enum: ["pending", "in-progress", "completed", "blocked"] },
+                priority: { type: Type.STRING, enum: ["low", "medium", "high"] },
+              }
+            }
+          },
+          required: ["id", "updates"]
         }
       }
-      throw error;
-    }
-  }
+    },
+    required: ["additions", "updates"]
+  };
 
-  const response = await executeWithRetry();
-
-  console.log('Gemini Response received');
+  console.log('Starting Multi-Model Analysis for project:', projectId);
 
   try {
+    const response = await callAI(prompt, schema);
     const result = JSON.parse(response.text);
-    console.log('Parsed result additions:', result.additions.length);
-    console.log('Parsed result updates:', result.updates.length);
     
+    const now = Date.now();
+    const threeDaysInMs = 3 * 24 * 60 * 60 * 1000;
+    const defaultDueDate = new Date(now + threeDaysInMs).toISOString().split('T')[0];
+
     const additions = result.additions.map((item: any) => ({
       workStream: item.workStream || 'Uncategorized',
+      epic: item.epic || 'Uncategorized',
+      category: (item.category as ActionCategory) || 'Uncategorized',
       owner: item.owner || 'TBD',
       responsible: item.responsible || 'TBD',
       informed: item.informed || '',
-      dueDate: item.dueDate || 'TBD',
+      dueDate: defaultDueDate,
       requirements: item.requirements || '',
-      ticketRef: item.ticketRef || '',
+      ticketRef: '',
       nextSteps: item.nextSteps || '',
       priority: item.priority || 'medium',
       projectId,
       status: 'pending',
-      createdAt: Date.now(),
+      createdAt: now,
     }));
 
     return {
@@ -162,7 +151,7 @@ export async function analyzeMeetingNotes(
       updates: result.updates
     };
   } catch (e) {
-    console.error("Failed to parse Gemini response. Raw text:", response.text);
-    throw new Error("Failed to parse AI response. Please check the console for details.");
+    console.error("AI Analysis failed:", e);
+    throw new Error("Failed to process meeting notes. The AI model might be unavailable.");
   }
 }
