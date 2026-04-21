@@ -8,8 +8,8 @@ export const ACTION_ITEM_CATEGORIES = [
   'architecture change',
   'testing',
   'requirement clarification',
-  'DevOps infrastructure',
-  'ML Ops infrastructure',
+  'infrastructure change - DEVOPS',
+  'infrastructure change - ML OPS',
   'Uncategorized'
 ];
 

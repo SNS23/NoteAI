@@ -205,7 +205,7 @@ export default function PerformanceDashboard({ projects }: PerformanceDashboardP
               <BarChart data={categoryData} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
                 <XAxis type="number" fontSize={10} hide />
-                <YAxis dataKey="name" type="category" fontSize={10} width={120} tickLine={false} axisLine={false} />
+                <YAxis dataKey="name" type="category" fontSize={10} width={150} tickLine={false} axisLine={false} />
                 <Tooltip />
                 <Bar dataKey="total" name="Total Actions" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
               </BarChart>
@@ -222,7 +222,16 @@ export default function PerformanceDashboard({ projects }: PerformanceDashboardP
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={epicData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" fontSize={11} tickLine={false} axisLine={false} />
+                <XAxis 
+                  dataKey="name" 
+                  fontSize={10} 
+                  tickLine={false} 
+                  axisLine={false} 
+                  interval={0}
+                  height={60}
+                  textAnchor="end"
+                  angle={-45}
+                />
                 <YAxis fontSize={10} tickLine={false} axisLine={false} />
                 <Tooltip />
                 <Bar dataKey="total" name="Total" fill="#e2e8f0" radius={[4, 4, 0, 0]} />
@@ -241,7 +250,16 @@ export default function PerformanceDashboard({ projects }: PerformanceDashboardP
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={ownerData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" fontSize={11} tickLine={false} axisLine={false} />
+                <XAxis 
+                  dataKey="name" 
+                  fontSize={10} 
+                  tickLine={false} 
+                  axisLine={false}
+                  interval={0}
+                  height={60}
+                  textAnchor="end"
+                  angle={-45}
+                />
                 <YAxis fontSize={10} tickLine={false} axisLine={false} />
                 <Tooltip />
                 <Bar dataKey="total" name="Committed" fill="#e2e8f0" radius={[4, 4, 0, 0]} />

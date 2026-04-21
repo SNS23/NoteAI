@@ -8,9 +8,10 @@ import AdminPanel from './components/AdminPanel';
 import ActionTracker from './components/ActionTracker';
 import PerformanceDashboard from './components/PerformanceDashboard';
 import ProjectManagement from './components/ProjectManagement';
+import AskTrackerAgent from './components/AskTrackerAgent';
 import { Button } from './components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
-import { LogOut, LayoutDashboard, ListTodo, Settings, Users, BarChart3 } from 'lucide-react';
+import { LogOut, LayoutDashboard, ListTodo, Settings, Users, BarChart3, Bot } from 'lucide-react';
 import { Toaster } from './components/ui/sonner';
 
 export default function App() {
@@ -133,6 +134,10 @@ export default function App() {
               <BarChart3 size={16} />
               Performance
             </TabsTrigger>
+            <TabsTrigger value="agent" className="flex items-center gap-2">
+              <Bot size={16} />
+              Ask Agent
+            </TabsTrigger>
             {profile?.role === 'admin' && (
               <TabsTrigger value="projects" className="flex items-center gap-2">
                 <LayoutDashboard size={16} />
@@ -147,6 +152,10 @@ export default function App() {
 
           <TabsContent value="performance" className="mt-0">
             <PerformanceDashboard projects={projects} />
+          </TabsContent>
+
+          <TabsContent value="agent" className="mt-0">
+            <AskTrackerAgent projects={projects} />
           </TabsContent>
 
           {profile?.role === 'admin' && (

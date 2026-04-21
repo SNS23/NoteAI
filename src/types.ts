@@ -45,8 +45,8 @@ export type ActionCategory =
   | 'architecture change'
   | 'testing'
   | 'requirement clarification'
-  | 'DevOps infrastructure'
-  | 'ML Ops infrastructure'
+  | 'infrastructure change - DEVOPS'
+  | 'infrastructure change - ML OPS'
   | 'Uncategorized';
 
 export interface ActionItem {
@@ -75,6 +75,8 @@ export interface MeetingNote {
   content: string;
   analyzedAt: number;
   userId: string;
+  archived?: boolean;
+  archivedAt?: number;
 }
 
 export interface PerformanceMetrics {

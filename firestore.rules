@@ -66,11 +66,13 @@ service cloud.firestore {
 
     match /projects/{projectId} {
       allow read: if isAuthenticated();
-      allow create, update, delete: if isAdmin() && isValidProject(request.resource.data);
+      allow create, update: if isAdmin() && isValidProject(request.resource.data);
+      allow delete: if isAdmin();
 
       match /members/{memberId} {
         allow read: if isAuthenticated();
-        allow create, update, delete: if isAdmin() && isValidMember(request.resource.data);
+        allow create, update: if isAdmin() && isValidMember(request.resource.data);
+        allow delete: if isAdmin();
       }
     }
 

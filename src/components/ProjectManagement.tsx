@@ -66,11 +66,15 @@ export default function ProjectManagement({ projects }: ProjectManagementProps) 
     }
   };
 
-  const handleDeleteProject = async (id: string) => {
+  const handleDeleteProject = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete project "${name}"? This will not delete action items or meeting notes associated with it.`)) {
+      return;
+    }
     try {
       await deleteDoc(doc(db, 'projects', id));
       toast.success('Project deleted');
     } catch (error) {
+      console.error("Delete Project Error:", error);
       toast.error('Failed to delete project');
     }
   };
@@ -171,7 +175,7 @@ export default function ProjectManagement({ projects }: ProjectManagementProps) 
             <TableBody>
               {projects.map((p) => (
                 <TableRow key={p.id}>
-                  <TableCell className="font-medium">{p.name}</TableCell>
+                  <TableCell className="font-medium truncate max-w-[150px]" title={p.name}>{p.name}</TableCell>
                   <TableCell>
                     {p.domain ? (
                       <div className="flex items-center gap-1 text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full w-fit">
@@ -271,7 +275,7 @@ export default function ProjectManagement({ projects }: ProjectManagementProps) 
                         </div>
                       </DialogContent>
                     </Dialog>
-                    <Button variant="ghost" size="icon" onClick={() => handleDeleteProject(p.id)} className="text-red-500 hover:text-red-700 hover:bg-red-50">
+                    <Button variant="ghost" size="icon" onClick={() => handleDeleteProject(p.id, p.name)} className="text-red-500 hover:text-red-700 hover:bg-red-50">
                       <Trash2 size={16} />
                     </Button>
                   </TableCell>

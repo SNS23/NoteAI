@@ -13,11 +13,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
 import { toast } from 'sonner';
-import { FileText, Sparkles, Download, Trash2, CheckCircle2, Clock, AlertCircle, Filter, Search, History, Eye, Users, Zap } from 'lucide-react';
+import { FileText, Sparkles, Download, Trash2, CheckCircle2, Clock, AlertCircle, Filter, Search, History, Eye, Users, Zap, Pencil } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
-import { STATUS_OPTIONS, PRIORITY_OPTIONS } from '../constants';
-import { format } from 'date-fns';
-import { limit } from 'firebase/firestore';
+import { STATUS_OPTIONS, PRIORITY_OPTIONS, ACTION_ITEM_CATEGORIES } from '../constants';
+import { format, differenceInDays } from 'date-fns';
+import { limit, writeBatch } from 'firebase/firestore';
 
 interface ActionTrackerProps {
   projects: Project[];
@@ -35,6 +35,40 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
   const [modalDescription, setModalDescription] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<ActionItem>>({});
+
+  useEffect(() => {
+    const archiveOldNotes = async () => {
+      if (selectedProjectId === 'all') return;
+      const tenDaysAgo = Date.now() - (10 * 24 * 60 * 60 * 1000);
+      
+      const q = query(
+        collection(db, 'meetingNotes'),
+        where('projectId', '==', selectedProjectId),
+        where('analyzedAt', '<', tenDaysAgo)
+      );
+
+      const unsubscribe = onSnapshot(q, async (snapshot) => {
+        if (snapshot.empty) return;
+        
+        console.log(`Cleaning up ${snapshot.size} old meeting notes...`);
+        const batch = writeBatch(db);
+        snapshot.docs.forEach(doc => {
+          batch.delete(doc.ref);
+        });
+        
+        try {
+          await batch.commit();
+          toast.info(`${snapshot.size} old notes archived/cleaned for storage optimization.`);
+        } catch (e) {
+          console.error("Cleanup failed", e);
+        }
+      });
+
+      return () => unsubscribe();
+    };
+
+    archiveOldNotes();
+  }, [selectedProjectId]);
 
   useEffect(() => {
     if (viewingItem) {
@@ -75,6 +109,36 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
     });
     return () => unsubscribe();
   }, [selectedProjectId]);
+
+  useEffect(() => {
+    if (items.length === 0) return;
+
+    // Robust migration: handle missing categories or legacy names
+    const outdatedItems = items.filter(item => 
+      !item.category || 
+      item.category as string === 'DevOps infrastructure' || 
+      item.category as string === 'ML Ops infrastructure' ||
+      (item.category as string).toLowerCase() === 'n/a'
+    );
+
+    if (outdatedItems.length > 0) {
+      console.log("Migrating/Normalizing categories for", outdatedItems.length, "items...");
+      outdatedItems.forEach(item => {
+        let newCategory: any = item.category;
+        if (!item.category || (item.category as string).toLowerCase() === 'n/a') {
+          newCategory = 'Uncategorized';
+        } else if (item.category as string === 'DevOps infrastructure') {
+          newCategory = 'infrastructure change - DEVOPS';
+        } else if (item.category as string === 'ML Ops infrastructure') {
+          newCategory = 'infrastructure change - ML OPS';
+        }
+        
+        if (newCategory !== item.category) {
+          updateDoc(doc(db, 'actionItems', item.id), { category: newCategory });
+        }
+      });
+    }
+  }, [items]);
 
   const handleAnalyze = async () => {
     if (!notes.trim()) {
@@ -176,12 +240,22 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
     (item.responsible?.toLowerCase() || '').includes(searchQuery.toLowerCase())
   );
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, createdAt?: number) => {
     const option = STATUS_OPTIONS.find(o => o.value === status);
+    const isOld = createdAt && (Date.now() - createdAt > 9 * 24 * 60 * 60 * 1000) && status !== 'completed';
+    
     return (
-      <Badge className={`${option?.color} text-white hover:${option?.color}`}>
-        {option?.label}
-      </Badge>
+      <div className="flex flex-col gap-1">
+        <Badge className={`${option?.color} text-white hover:${option?.color}`}>
+          {option?.label}
+        </Badge>
+        {isOld && (
+          <Badge variant="destructive" className="text-[8px] h-4 py-0 flex items-center gap-1 animate-pulse">
+            <AlertCircle size={8} />
+            Attention Needed
+          </Badge>
+        )}
+      </div>
     );
   };
 
@@ -203,16 +277,20 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
     const filtered = filteredItems.filter(item => {
       if (searchQuery.startsWith('note:')) {
         const noteId = searchQuery.split(':')[1];
-        return item.sourceNoteId === noteId;
+        return item.sourceNoteId === noteId || item.lastUpdatedFromNoteId === noteId;
       }
       return true;
     });
 
     const groups: Record<string, ActionItem[]> = {};
     filtered.forEach(item => {
-      const epic = item.epic || 'Uncategorized Functionality';
-      if (!groups[epic]) groups[epic] = [];
-      groups[epic].push(item);
+      // Group by Epic primarily, but show Category if Epic is generic or missing
+      const epic = item.epic || 'General';
+      const category = item.category || 'Uncategorized';
+      const groupKey = `${epic} | ${category}`;
+      
+      if (!groups[groupKey]) groups[groupKey] = [];
+      groups[groupKey].push(item);
     });
     return groups;
   }, [filteredItems, searchQuery]);
@@ -293,15 +371,15 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
                   <History size={16} />
                   Version History
                 </DialogTrigger>
-                <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-                  <DialogHeader>
+                <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0">
+                  <DialogHeader className="p-6 pb-2">
                     <DialogTitle>Meeting Notes History</DialogTitle>
                     <DialogDescription>
-                      Review the last 10 versions of notes for this project
+                      Review recent versions (auto-archived after 10 days for storage optimization)
                     </DialogDescription>
                   </DialogHeader>
-                  <ScrollArea className="flex-1 pr-4 -mr-4">
-                    <div className="space-y-4 py-4 pr-4">
+                  <ScrollArea className="flex-1 px-6 pb-6">
+                    <div className="space-y-4 py-2">
                       {history.map((note) => (
                         <Card key={note.id} className="border-slate-100 shadow-none hover:border-primary/30 transition-colors">
                           <CardHeader className="p-4 pb-2">
@@ -335,7 +413,7 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
                                 className="h-7 text-[10px] gap-1"
                                 onClick={() => {
                                   setSearchQuery(`note:${note.id}`);
-                                  toast.info('Filtering tracker by this version');
+                                  toast.info('Viewing items created/updated in this version');
                                 }}
                               >
                                 <Filter size={12} />
@@ -388,12 +466,12 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
               <Table className="min-w-full table-fixed text-xs sm:text-sm">
                 <TableHeader className="bg-slate-50 sticky top-0 z-10">
                   <TableRow>
-                    <TableHead className="w-[25%] min-w-[150px]">Work Stream</TableHead>
-                    <TableHead className="w-[15%] min-w-[100px]">Category</TableHead>
-                    <TableHead className="w-[15%] min-w-[100px]">Owner</TableHead>
+                    <TableHead className="w-[30%] min-w-[180px]">Work Stream</TableHead>
+                    <TableHead className="w-[15%] min-w-[130px]">Category</TableHead>
+                    <TableHead className="w-[15%] min-w-[110px]">Owner</TableHead>
                     <TableHead className="w-[10%] min-w-[80px]">Priority</TableHead>
                     <TableHead className="w-[10%] min-w-[90px]">Due Date</TableHead>
-                    <TableHead className="w-[15%] min-w-[120px]">Status</TableHead>
+                    <TableHead className="w-[10%] min-w-[110px]">Status</TableHead>
                     <TableHead className="w-[10%] min-w-[80px] text-right">Edit</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -404,8 +482,8 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
                         <TableCell colSpan={7} className="py-2">
                           <div className="flex items-center gap-2">
                             <Zap size={14} className="text-primary" />
-                            <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
-                              Functionality: {epic}
+                            <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider truncate max-w-[300px]" title={epic}>
+                              Group: {epic}
                             </span>
                             <Badge variant="secondary" className="text-[10px] h-4 px-1.5 bg-primary/10 text-primary border-none">
                               {(epicItems as ActionItem[]).length}
@@ -434,9 +512,33 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
                             )}
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline" className="text-[10px] font-normal border-slate-200 bg-slate-50 whitespace-nowrap">
-                              {item.category || 'N/A'}
-                            </Badge>
+                            {editingId === item.id ? (
+                              <div onClick={(e) => e.stopPropagation()}>
+                                <Select 
+                                  value={editFormData.category || 'Uncategorized'} 
+                                  onValueChange={(v) => setEditFormData({ ...editFormData, category: v as any })}
+                                >
+                                  <SelectTrigger className="h-8 w-full border-slate-200 bg-white/50 px-2 focus:ring-primary/20 text-[10px]">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {ACTION_ITEM_CATEGORIES.map(cat => (
+                                      <SelectItem key={cat} value={cat} className="text-[10px]">
+                                        {cat}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            ) : (
+                              <Badge 
+                                variant="outline" 
+                                className="text-[10px] font-normal border-slate-200 bg-slate-50 truncate max-w-[120px] block"
+                                title={item.category || 'N/A'}
+                              >
+                                {item.category || 'N/A'}
+                              </Badge>
+                            )}
                           </TableCell>
                           <TableCell>
                             {editingId === item.id ? (
@@ -447,7 +549,7 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
                                 onClick={(e) => e.stopPropagation()}
                               />
                             ) : (
-                              <div className="text-xs sm:text-sm text-slate-600 truncate">{item.owner}</div>
+                              <div className="text-xs sm:text-sm text-slate-600 truncate max-w-[100px]" title={item.owner}>{item.owner}</div>
                             )}
                           </TableCell>
                           <TableCell>
@@ -473,7 +575,9 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
                                 onValueChange={(v) => editingId === item.id ? setEditFormData({ ...editFormData, status: v as any }) : updateStatus(item.id, v)}
                               >
                                 <SelectTrigger className="h-8 w-full border-slate-200 bg-white/50 px-2 focus:ring-primary/20">
-                                  <SelectValue />
+                                  <SelectValue>
+                                    {getStatusBadge(editingId === item.id ? editFormData.status! : item.status, item.createdAt)}
+                                  </SelectValue>
                                 </SelectTrigger>
                                 <SelectContent>
                                   {STATUS_OPTIONS.map(opt => (
@@ -510,14 +614,24 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
                                   </Button>
                                 </>
                               ) : (
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  onClick={() => startEditing(item)}
-                                  className="h-8 w-8 text-slate-400 hover:text-primary"
-                                >
-                                  <Filter className="rotate-90" size={14} />
-                                </Button>
+                                <div className="flex items-center gap-1">
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    onClick={() => startEditing(item)}
+                                    className="h-8 w-8 text-slate-400 hover:text-primary"
+                                  >
+                                    <Pencil size={14} />
+                                  </Button>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    onClick={() => deleteItem(item.id)}
+                                    className="h-8 w-8 text-slate-400 hover:text-destructive"
+                                  >
+                                    <Trash2 size={14} />
+                                  </Button>
+                                </div>
                               )}
                             </div>
                           </TableCell>
@@ -576,39 +690,78 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-slate-100">
-                <div className="space-y-1 text-slate-500">
-                  <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Functionality / Epic</span>
-                  <span className="text-xs font-semibold text-slate-700">{viewingItem?.epic || 'Uncategorized'}</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-slate-100 overflow-hidden">
+                  <div className="space-y-1 text-slate-500 overflow-hidden">
+                    <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Functionality / Epic</span>
+                    <span className="text-xs font-semibold text-slate-700 block truncate" title={viewingItem?.epic || 'Uncategorized'}>
+                      {viewingItem?.epic || 'Uncategorized'}
+                    </span>
+                  </div>
+                  <div className="space-y-1 text-slate-500 overflow-hidden">
+                    <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Category</span>
+                    <Select 
+                      value={viewingItem?.category || 'Uncategorized'} 
+                      onValueChange={(v) => {
+                        if (viewingItem) {
+                          handleUpdateItem(viewingItem.id, { category: v as any });
+                          setViewingItem({ ...viewingItem, category: v as any });
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-7 text-[10px] py-0 bg-slate-100 border-none font-medium text-slate-600 w-full truncate">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ACTION_ITEM_CATEGORIES.map(cat => (
+                          <SelectItem key={cat} value={cat} className="text-[10px]">
+                            {cat}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1 text-slate-500 overflow-hidden">
+                    <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Owner</span>
+                    <span className="text-xs font-semibold text-slate-700 block truncate" title={viewingItem?.owner}>
+                      {viewingItem?.owner}
+                    </span>
+                  </div>
+                  <div className="space-y-1 text-slate-500 overflow-hidden">
+                    <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Due Date</span>
+                    <span className="text-xs font-semibold text-slate-700 block truncate" title={viewingItem?.dueDate}>
+                      {viewingItem?.dueDate}
+                    </span>
+                  </div>
                 </div>
-                <div className="space-y-1 text-slate-500">
-                  <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Category</span>
-                  <Badge variant="secondary" className="text-[9px] h-5 bg-slate-100 text-slate-600 border-none font-medium">
-                    {viewingItem?.category}
-                  </Badge>
-                </div>
-                <div className="space-y-1 text-slate-500">
-                  <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Owner</span>
-                  <span className="text-xs font-semibold text-slate-700">{viewingItem?.owner}</span>
-                </div>
-                <div className="space-y-1 text-slate-500">
-                  <span className="block text-[9px] uppercase tracking-wider font-bold text-slate-400">Due Date</span>
-                  <span className="text-xs font-semibold text-slate-700">{viewingItem?.dueDate}</span>
-                </div>
-              </div>
             </div>
           </ScrollArea>
           
-          <CardFooter className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
-            {modalDescription !== (viewingItem?.requirements || '') && (
-              <Button size="sm" onClick={saveModalDescription} className="gap-2">
-                <CheckCircle2 size={14} />
-                Save Changes
-              </Button>
-            )}
-            <Button variant="outline" size="sm" onClick={() => setViewingItem(null)}>
-              Close Review
+          <CardFooter className="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center gap-3">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="text-destructive hover:text-destructive hover:bg-destructive/10 gap-2"
+              onClick={() => {
+                if (viewingItem && confirm('Are you sure you want to delete this action item?')) {
+                  deleteItem(viewingItem.id);
+                  setViewingItem(null);
+                }
+              }}
+            >
+              <Trash2 size={14} />
+              Delete Item
             </Button>
+            <div className="flex gap-3">
+              {modalDescription !== (viewingItem?.requirements || '') && (
+                <Button size="sm" onClick={saveModalDescription} className="gap-2">
+                  <CheckCircle2 size={14} />
+                  Save Changes
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={() => setViewingItem(null)}>
+                Close Review
+              </Button>
+            </div>
           </CardFooter>
         </DialogContent>
       </Dialog>
