@@ -33,7 +33,16 @@ export async function analyzeMeetingNotes(
 
     Your task:
     1. Identify NEW action items mentioned in the notes that are not in the existing list.
-    2. Identify UPDATES to existing action items (e.g., status changes, new requirements, changed owners, or progress mentioned in notes).
+    2. Identify UPDATES to existing action items. Pay close attention to:
+       - STATUS CHANGES: If notes mention a task is "done", "finished", "started", "blocked", or "moving to in-progress", update the "status" field accordingly.
+       - Requirement additions or progress updates.
+       - Changes in ownership or due dates.
+    
+    Status mapping:
+    - "done", "completed", "resolved" -> "completed"
+    - "started", "in process", "doing" -> "in-progress"
+    - "blocked", "stuck", "on hold" -> "blocked"
+    - "new", "pending" -> "pending"
     
     For NEW items (additions), provide:
     - workStream, owner, responsible, informed, dueDate, requirements, ticketRef, nextSteps, priority (low/medium/high).
@@ -48,39 +57,22 @@ export async function analyzeMeetingNotes(
   console.log('Starting Gemini Analysis for project:', projectId);
   console.log('Existing items count:', existingItems.length);
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          additions: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                workStream: { type: Type.STRING },
-                owner: { type: Type.STRING },
-                responsible: { type: Type.STRING },
-                informed: { type: Type.STRING },
-                dueDate: { type: Type.STRING },
-                requirements: { type: Type.STRING },
-                ticketRef: { type: Type.STRING },
-                nextSteps: { type: Type.STRING },
-                priority: { type: Type.STRING, enum: ["low", "medium", "high"] },
-              },
-              required: ["workStream", "owner", "responsible", "requirements", "priority"],
-            },
-          },
-          updates: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                id: { type: Type.STRING },
-                updates: {
+  const maxRetries = 3;
+  let retryCount = 0;
+
+  async function executeWithRetry(): Promise<any> {
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              additions: {
+                type: Type.ARRAY,
+                items: {
                   type: Type.OBJECT,
                   properties: {
                     workStream: { type: Type.STRING },
@@ -91,19 +83,57 @@ export async function analyzeMeetingNotes(
                     requirements: { type: Type.STRING },
                     ticketRef: { type: Type.STRING },
                     nextSteps: { type: Type.STRING },
-                    status: { type: Type.STRING, enum: ["pending", "in-progress", "completed", "blocked"] },
                     priority: { type: Type.STRING, enum: ["low", "medium", "high"] },
-                  }
-                }
+                  },
+                  required: ["workStream", "owner", "responsible", "requirements", "priority"],
+                },
               },
-              required: ["id", "updates"]
-            }
-          }
+              updates: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    id: { type: Type.STRING },
+                    updates: {
+                      type: Type.OBJECT,
+                      properties: {
+                        workStream: { type: Type.STRING },
+                        owner: { type: Type.STRING },
+                        responsible: { type: Type.STRING },
+                        informed: { type: Type.STRING },
+                        dueDate: { type: Type.STRING },
+                        requirements: { type: Type.STRING },
+                        ticketRef: { type: Type.STRING },
+                        nextSteps: { type: Type.STRING },
+                        status: { type: Type.STRING, enum: ["pending", "in-progress", "completed", "blocked"] },
+                        priority: { type: Type.STRING, enum: ["low", "medium", "high"] },
+                      }
+                    }
+                  },
+                  required: ["id", "updates"]
+                }
+              }
+            },
+            required: ["additions", "updates"]
+          },
         },
-        required: ["additions", "updates"]
-      },
-    },
-  });
+      });
+      return response;
+    } catch (error: any) {
+      if (error?.code === 429 || error?.status === "RESOURCE_EXHAUSTED") {
+        if (retryCount < maxRetries) {
+          retryCount++;
+          const delay = Math.pow(2, retryCount) * 1000;
+          console.log(`Rate limited. Retrying in ${delay}ms... (Attempt ${retryCount}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          return executeWithRetry();
+        }
+      }
+      throw error;
+    }
+  }
+
+  const response = await executeWithRetry();
 
   console.log('Gemini Response received');
 

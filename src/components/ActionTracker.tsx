@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db, auth } from '../lib/firebase';
 import { collection, addDoc, onSnapshot, query, where, updateDoc, doc, deleteDoc, orderBy } from 'firebase/firestore';
 import { ActionItem, Project, MeetingNote } from '../types';
@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
 import { toast } from 'sonner';
-import { FileText, Sparkles, Download, Trash2, CheckCircle2, Clock, AlertCircle, Filter, Search, History, Eye } from 'lucide-react';
+import { FileText, Sparkles, Download, Trash2, CheckCircle2, Clock, AlertCircle, Filter, Search, History, Eye, Users } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { STATUS_OPTIONS, PRIORITY_OPTIONS } from '../constants';
 import { format } from 'date-fns';
@@ -31,6 +31,16 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [history, setHistory] = useState<(MeetingNote & { userName?: string })[]>([]);
   const [viewingNote, setViewingNote] = useState<(MeetingNote & { userName?: string }) | null>(null);
+  const [viewingItem, setViewingItem] = useState<ActionItem | null>(null);
+  const [modalDescription, setModalDescription] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editFormData, setEditFormData] = useState<Partial<ActionItem>>({});
+
+  useEffect(() => {
+    if (viewingItem) {
+      setModalDescription(viewingItem.requirements || '');
+    }
+  }, [viewingItem?.id]); // Only reset when the item ID changes to avoid reset during local edits
 
   useEffect(() => {
     if (selectedProjectId === 'all') {
@@ -124,6 +134,33 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
     }
   };
 
+  const handleUpdateItem = async (id: string, updates: Partial<ActionItem>) => {
+    try {
+      await updateDoc(doc(db, 'actionItems', id), updates);
+      toast.success('Item updated');
+      setEditingId(null);
+      // We don't update viewingItem here to prevent the state-refresh reopening bug
+    } catch (error) {
+      toast.error('Failed to update item');
+    }
+  };
+
+  const saveModalDescription = async () => {
+    if (!viewingItem) return;
+    await handleUpdateItem(viewingItem.id, { requirements: modalDescription });
+    setViewingItem({ ...viewingItem, requirements: modalDescription });
+  };
+
+  const startEditing = (item: ActionItem) => {
+    setEditingId(item.id);
+    setEditFormData(item);
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditFormData({});
+  };
+
   const deleteItem = async (id: string) => {
     try {
       await deleteDoc(doc(db, 'actionItems', id));
@@ -150,12 +187,35 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
 
   const getPriorityBadge = (priority: string) => {
     const option = PRIORITY_OPTIONS.find(o => o.value === priority);
+    const colorMap = {
+      low: 'bg-blue-100 text-blue-700 border-blue-200',
+      medium: 'bg-amber-100 text-amber-700 border-amber-200',
+      high: 'bg-red-100 text-red-700 border-red-200'
+    };
     return (
-      <Badge variant="outline" className="capitalize">
+      <Badge variant="outline" className={`capitalize ${colorMap[priority as keyof typeof colorMap] || ''}`}>
         {priority}
       </Badge>
     );
   };
+
+  const groupedItems = useMemo(() => {
+    const filtered = filteredItems.filter(item => {
+      if (searchQuery.startsWith('note:')) {
+        const noteId = searchQuery.split(':')[1];
+        return item.sourceNoteId === noteId;
+      }
+      return true;
+    });
+
+    const groups: Record<string, ActionItem[]> = {};
+    filtered.forEach(item => {
+      const owner = item.owner || 'Unassigned';
+      if (!groups[owner]) groups[owner] = [];
+      groups[owner].push(item);
+    });
+    return groups;
+  }, [filteredItems, searchQuery]);
 
   return (
     <div className="space-y-6">
@@ -324,67 +384,148 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
               )}
             </div>
 
-            <ScrollArea className="h-[500px] rounded-md border border-slate-100">
-              <Table>
+            <ScrollArea className="h-[500px] w-full rounded-md border border-slate-100">
+              <Table className="min-w-full table-fixed">
                 <TableHeader className="bg-slate-50 sticky top-0 z-10">
                   <TableRow>
-                    <TableHead className="w-[200px]">Work Stream</TableHead>
-                    <TableHead>Owner / Resp.</TableHead>
-                    <TableHead>Due Date</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead className="w-[30%] min-w-[200px]">Title</TableHead>
+                    <TableHead className="w-[20%] min-w-[120px]">Owner</TableHead>
+                    <TableHead className="w-[15%] min-w-[100px]">Due Date</TableHead>
+                    <TableHead className="w-[20%] min-w-[140px]">Status</TableHead>
+                    <TableHead className="w-[15%] min-w-[100px] text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredItems.filter(item => {
-                    if (searchQuery.startsWith('note:')) {
-                      const noteId = searchQuery.split(':')[1];
-                      return item.sourceNoteId === noteId;
-                    }
-                    return true;
-                  }).map((item) => (
-                    <TableRow key={item.id} className="group">
-                      <TableCell>
-                        <div className="font-medium text-slate-900">{item.workStream}</div>
-                        <div className="text-xs text-slate-500 truncate max-w-[180px]">{item.requirements}</div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm font-medium">{item.owner}</div>
-                        <div className="text-xs text-slate-500 italic">Resp: {item.responsible}</div>
-                      </TableCell>
-                      <TableCell className="text-sm text-slate-600">
-                        {item.dueDate}
-                      </TableCell>
-                      <TableCell>
-                        <Select value={item.status} onValueChange={(v) => updateStatus(item.id, v)}>
-                          <SelectTrigger className="h-8 w-[130px] border-none bg-transparent p-0 focus:ring-0">
-                            <SelectValue>{getStatusBadge(item.status)}</SelectValue>
-                          </SelectTrigger>
-                          <SelectContent>
-                            {STATUS_OPTIONS.map(opt => (
-                              <SelectItem key={opt.value} value={opt.value}>
-                                <div className="flex items-center gap-2">
-                                  <div className={`w-2 h-2 rounded-full ${opt.color}`} />
-                                  {opt.label}
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          onClick={() => deleteItem(item.id)}
-                          className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity"
+                  {Object.entries(groupedItems).map(([owner, ownerItems]) => (
+                    <React.Fragment key={owner}>
+                      <TableRow className="bg-slate-50/50 hover:bg-slate-50/50 border-y border-slate-200">
+                        <TableCell colSpan={5} className="py-2">
+                          <div className="flex items-center gap-2">
+                            <Users size={14} className="text-slate-400" />
+                            <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                              Grouped By: {owner}
+                            </span>
+                            <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                              {(ownerItems as ActionItem[]).length}
+                            </Badge>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      {(ownerItems as ActionItem[]).map((item) => (
+                        <TableRow 
+                          key={item.id} 
+                          className={`group transition-colors ${editingId === item.id ? 'bg-primary/5' : 'hover:bg-slate-50/80 cursor-pointer'}`}
+                          onClick={() => editingId !== item.id && setViewingItem(item)}
                         >
-                          <Trash2 size={16} />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
+                          <TableCell>
+                            {editingId === item.id ? (
+                              <Input 
+                                value={editFormData.workStream || ''} 
+                                onChange={(e) => setEditFormData({ ...editFormData, workStream: e.target.value })}
+                                className="h-8 text-sm"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            ) : (
+                              <div className="font-medium text-slate-900 truncate" title={item.workStream}>
+                                {item.workStream}
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {editingId === item.id ? (
+                              <Input 
+                                value={editFormData.owner || ''} 
+                                onChange={(e) => setEditFormData({ ...editFormData, owner: e.target.value })}
+                                className="h-8 text-sm"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            ) : (
+                              <div className="text-sm text-slate-600 truncate">{item.owner}</div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {editingId === item.id ? (
+                              <Input 
+                                type="text"
+                                value={editFormData.dueDate || ''} 
+                                onChange={(e) => setEditFormData({ ...editFormData, dueDate: e.target.value })}
+                                className="h-8 text-sm"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            ) : (
+                              <div className="text-sm text-slate-500 whitespace-nowrap">{item.dueDate}</div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div onClick={(e) => e.stopPropagation()}>
+                              <Select 
+                                value={editingId === item.id ? editFormData.status : item.status} 
+                                onValueChange={(v) => editingId === item.id ? setEditFormData({ ...editFormData, status: v as any }) : updateStatus(item.id, v)}
+                              >
+                                <SelectTrigger className="h-8 w-full border-slate-200 bg-white/50 px-2 focus:ring-primary/20">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {STATUS_OPTIONS.map(opt => (
+                                    <SelectItem key={opt.value} value={opt.value}>
+                                      <div className="flex items-center gap-2">
+                                        <div className={`w-2 h-2 rounded-full ${opt.color}`} />
+                                        <span className="text-xs">{opt.label}</span>
+                                      </div>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                              {editingId === item.id ? (
+                                <>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className="h-7 px-2 text-xs text-primary"
+                                    onClick={() => handleUpdateItem(item.id, editFormData)}
+                                  >
+                                    Save
+                                  </Button>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className="h-7 px-2 text-xs text-slate-500"
+                                    onClick={cancelEditing}
+                                  >
+                                    Cancel
+                                  </Button>
+                                </>
+                              ) : (
+                                <>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    onClick={() => startEditing(item)}
+                                    className="h-8 w-8 text-slate-400 hover:text-primary"
+                                  >
+                                    <Filter className="rotate-90" size={14} />
+                                  </Button>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    onClick={() => deleteItem(item.id)}
+                                    className="h-8 w-8 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all"
+                                  >
+                                    <Trash2 size={14} />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </React.Fragment>
                   ))}
-                  {filteredItems.length === 0 && (
+                  {Object.keys(groupedItems).length === 0 && (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center py-12 text-slate-400">
                         <AlertCircle className="mx-auto mb-2 opacity-20" size={48} />
@@ -398,6 +539,69 @@ export default function ActionTracker({ projects }: ActionTrackerProps) {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={!!viewingItem} onOpenChange={(open) => !open && setViewingItem(null)}>
+        <DialogContent className="max-w-xl max-h-[85vh] p-0 flex flex-col overflow-hidden bg-white shadow-2xl border-none border-0 ring-0">
+          <div className="p-6 bg-slate-50 border-b border-slate-200">
+            <DialogHeader>
+              <div className="flex items-start justify-between">
+                <div className="space-y-1">
+                  <DialogTitle className="text-2xl font-bold tracking-tight text-slate-900">
+                    {viewingItem?.workStream}
+                  </DialogTitle>
+                  <p className="text-sm text-slate-500">
+                    Review and edit description
+                  </p>
+                </div>
+                {viewingItem && getPriorityBadge(viewingItem.priority)}
+              </div>
+            </DialogHeader>
+          </div>
+          
+          <ScrollArea className="flex-1 overflow-y-auto">
+            <div className="p-6 space-y-6">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[11px] font-bold uppercase tracking-widest text-primary/70">
+                    Requirement & Detail Description
+                  </Label>
+                </div>
+                <div className="relative">
+                  <textarea
+                    className="w-full min-h-[350px] p-4 text-sm leading-relaxed text-slate-700 bg-white border border-slate-200 rounded-xl shadow-inner focus:ring-2 focus:ring-primary/10 focus:border-primary/30 transition-all resize-none font-sans"
+                    value={modalDescription}
+                    onChange={(e) => setModalDescription(e.target.value)}
+                    placeholder="Enter detailed description here..."
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6 pt-4 border-t border-slate-100">
+                <div className="space-y-1 text-slate-500">
+                  <span className="block text-[10px] uppercase tracking-wider font-medium">Owner</span>
+                  <span className="text-sm font-semibold text-slate-700">{viewingItem?.owner}</span>
+                </div>
+                <div className="space-y-1 text-slate-500">
+                  <span className="block text-[10px] uppercase tracking-wider font-medium">Due Date</span>
+                  <span className="text-sm font-semibold text-slate-700">{viewingItem?.dueDate}</span>
+                </div>
+              </div>
+            </div>
+          </ScrollArea>
+          
+          <CardFooter className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
+            {modalDescription !== (viewingItem?.requirements || '') && (
+              <Button size="sm" onClick={saveModalDescription} className="gap-2">
+                <CheckCircle2 size={14} />
+                Save Changes
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => setViewingItem(null)}>
+              Close Review
+            </Button>
+          </CardFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!viewingNote} onOpenChange={(open) => !open && setViewingNote(null)}>
         <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
